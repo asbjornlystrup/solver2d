@@ -736,56 +736,439 @@ void s2SolveRevolute_XPBD(s2Joint* base, s2StepContext* context, float inv_h)
 	s2Body* bodyA = context->bodies + base->edges[0].bodyIndex;
 	s2Body* bodyB = context->bodies + base->edges[1].bodyIndex;
 
-	s2Vec2 dcA = bodyA->deltaPosition;
-	s2Rot qA = bodyA->rot;
-	s2Vec2 dcB = bodyB->deltaPosition;
-	s2Rot qB = bodyB->rot;
+    int type = context->extraIterations;
 
-	// Solve point-to-point constraint.
-	{
-		s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
-		s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+    if (type == 1) {
 
-		s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+        // 2x2 matrix solve.
 
-		float c = s2Length(separation);
-		s2Vec2 n = s2Normalize(separation);
+        s2Vec2 dcA = bodyA->deltaPosition;
+        s2Rot qA = bodyA->rot;
+        s2Vec2 dcB = bodyB->deltaPosition;
+        s2Rot qB = bodyB->rot;
 
-		float mA = joint->invMassA, mB = joint->invMassB;
+        // Solve point-to-point constraint.
+        {
+            s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+            s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
 
-		if (mA == 0.0f && mB == 0.0f)
-		{
-			// static connection
-			return;
-		}
+            s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
 
-		float iA = joint->invIA, iB = joint->invIB;
+            float c = s2Length(separation);
+            s2Vec2 n = s2Normalize(separation);
+            
+            float mA = joint->invMassA, mB = joint->invMassB;
 
-		float rnA = s2Cross(rA, n);
-		float rnB = s2Cross(rB, n);
+            if (mA == 0.0f && mB == 0.0f)
+            {
+                // static connection
+                return;
+            }
 
-		// w1 and w2 in paper
-		float kA = mA + iA * rnA * rnA;
-		float kB = mB + iB * rnB * rnB;
+            float iA = joint->invIA, iB = joint->invIB;
 
-		assert(kA + kB > 0.0f);
+            float rnA = s2Cross(rA, n);
+            float rnB = s2Cross(rB, n);
 
-		//float lambda = -c / (kA + kB);
-		float lambda = -c / (kA + kB + compliance);
+            // w1 and w2 in paper
+            float kA = mA + iA * rnA * rnA;
+            float kB = mB + iB * rnB * rnB;
 
-		s2Vec2 p = s2MulSV(lambda, n);
+            assert(kA + kB > 0.0f);
 
-		dcA = s2MulSub(dcA, mA, p);
-		qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+            //float lambda = -c / (kA + kB);
+            // float lambda = -c / (kA + kB + compliance);
 
-		dcB = s2MulAdd(dcB, mB, p);
-		qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
-	}
+            // s2Vec2 p = s2MulSV(lambda, n);
 
-	bodyA->deltaPosition = dcA;
-	bodyA->rot = qA;
-	bodyB->deltaPosition = dcB;
-	bodyB->rot = qB;
+            s2Mat22 K;
+            K.cx.x = mA + mB + iA * rA.y * rA.y + iB * rB.y * rB.y;
+            K.cx.y = -iA * rA.x * rA.y - iB * rB.x * rB.y;
+            K.cy.x = K.cx.y;
+            K.cy.y = mA + mB + iA * rA.x * rA.x + iB * rB.x * rB.x;
+            s2Vec2 p = s2Solve22(K, s2Neg(separation));
+
+            dcA = s2MulSub(dcA, mA, p);
+            qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+            dcB = s2MulAdd(dcB, mB, p);
+            qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+        }
+
+        bodyA->deltaPosition = dcA;
+        bodyA->rot = qA;
+        bodyB->deltaPosition = dcB;
+        bodyB->rot = qB;
+
+    } else if (type == 2) {
+
+        s2Vec2 dcA = bodyA->deltaPosition;
+        s2Rot qA = bodyA->rot;
+        s2Vec2 dcB = bodyB->deltaPosition;
+        s2Rot qB = bodyB->rot;
+
+        // Solve point-to-point constraint.
+        {
+            s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+            s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+
+            s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+
+            float c = s2Length(separation);
+            s2Vec2 n = s2Normalize(separation);
+            
+            float mA = joint->invMassA, mB = joint->invMassB;
+
+            if (mA == 0.0f && mB == 0.0f)
+            {
+                // static connection
+                return;
+            }
+
+            float iA = joint->invIA, iB = joint->invIB;
+
+            float rnA = s2Cross(rA, n);
+            float rnB = s2Cross(rB, n);
+
+            // w1 and w2 in paper
+            float kA = mA + iA * rnA * rnA;
+            float kB = mB + iB * rnB * rnB;
+
+            assert(kA + kB > 0.0f);
+
+            //float lambda = -c / (kA + kB);
+            float lambda = -c / (kA + kB + compliance);
+
+            s2Vec2 p = s2MulSV(lambda, n);
+
+            dcA = s2MulSub(dcA, mA, p);
+            qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+            dcB = s2MulAdd(dcB, mB, p);
+            qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+        }
+
+        bodyA->deltaPosition = dcA;
+        bodyA->rot = qA;
+        bodyB->deltaPosition = dcB;
+        bodyB->rot = qB;
+
+    } else if (type == 3) {
+
+        // x
+        {
+            s2Vec2 dcA = bodyA->deltaPosition;
+            s2Rot qA = bodyA->rot;
+            s2Vec2 dcB = bodyB->deltaPosition;
+            s2Rot qB = bodyB->rot;
+
+            // Solve point-to-point constraint.
+            {
+                s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+
+                s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+
+                float c = separation.x; // s2Length(separation);
+                s2Vec2 n = s2MakeVec2(1, 0); //s2Normalize(separation);
+                
+                float mA = joint->invMassA, mB = joint->invMassB;
+
+                if (mA == 0.0f && mB == 0.0f)
+                {
+                    // static connection
+                    return;
+                }
+
+                float iA = joint->invIA, iB = joint->invIB;
+
+                float rnA = s2Cross(rA, n);
+                float rnB = s2Cross(rB, n);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rnA * rnA;
+                float kB = mB + iB * rnB * rnB;
+
+                assert(kA + kB > 0.0f);
+
+                //float lambda = -c / (kA + kB);
+                float lambda = -c / (kA + kB + compliance);
+
+                s2Vec2 p = s2MulSV(lambda, n);
+
+                dcA = s2MulSub(dcA, mA, p);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+                dcB = s2MulAdd(dcB, mB, p);
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+            }
+
+            bodyA->deltaPosition = dcA;
+            bodyA->rot = qA;
+            bodyB->deltaPosition = dcB;
+            bodyB->rot = qB;
+        }
+
+        // y
+        {
+            s2Vec2 dcA = bodyA->deltaPosition;
+            s2Rot qA = bodyA->rot;
+            s2Vec2 dcB = bodyB->deltaPosition;
+            s2Rot qB = bodyB->rot;
+
+            // Solve point-to-point constraint.
+            {
+                s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+
+                s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+
+                float c = separation.y; // s2Length(separation);
+                s2Vec2 n = s2MakeVec2(0, 1); //s2Normalize(separation);
+                
+                float mA = joint->invMassA, mB = joint->invMassB;
+
+                if (mA == 0.0f && mB == 0.0f)
+                {
+                    // static connection
+                    return;
+                }
+
+                float iA = joint->invIA, iB = joint->invIB;
+
+                float rnA = s2Cross(rA, n);
+                float rnB = s2Cross(rB, n);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rnA * rnA;
+                float kB = mB + iB * rnB * rnB;
+
+                assert(kA + kB > 0.0f);
+
+                //float lambda = -c / (kA + kB);
+                float lambda = -c / (kA + kB + compliance);
+
+                s2Vec2 p = s2MulSV(lambda, n);
+
+                dcA = s2MulSub(dcA, mA, p);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+                dcB = s2MulAdd(dcB, mB, p);
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+            }
+
+            bodyA->deltaPosition = dcA;
+            bodyA->rot = qA;
+            bodyB->deltaPosition = dcB;
+            bodyB->rot = qB;
+        }
+
+    } else if (type == 4) {
+
+        // y
+        {
+            s2Vec2 dcA = bodyA->deltaPosition;
+            s2Rot qA = bodyA->rot;
+            s2Vec2 dcB = bodyB->deltaPosition;
+            s2Rot qB = bodyB->rot;
+
+            // Solve point-to-point constraint.
+            {
+                s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+
+                s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+
+                float c = separation.y; // s2Length(separation);
+                s2Vec2 n = s2MakeVec2(0, 1); //s2Normalize(separation);
+                
+                float mA = joint->invMassA, mB = joint->invMassB;
+
+                if (mA == 0.0f && mB == 0.0f)
+                {
+                    // static connection
+                    return;
+                }
+
+                float iA = joint->invIA, iB = joint->invIB;
+
+                float rnA = s2Cross(rA, n);
+                float rnB = s2Cross(rB, n);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rnA * rnA;
+                float kB = mB + iB * rnB * rnB;
+
+                assert(kA + kB > 0.0f);
+
+                //float lambda = -c / (kA + kB);
+                float lambda = -c / (kA + kB + compliance);
+
+                s2Vec2 p = s2MulSV(lambda, n);
+
+                dcA = s2MulSub(dcA, mA, p);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+                dcB = s2MulAdd(dcB, mB, p);
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+            }
+
+            bodyA->deltaPosition = dcA;
+            bodyA->rot = qA;
+            bodyB->deltaPosition = dcB;
+            bodyB->rot = qB;
+        }
+
+        // x
+        {
+            s2Vec2 dcA = bodyA->deltaPosition;
+            s2Rot qA = bodyA->rot;
+            s2Vec2 dcB = bodyB->deltaPosition;
+            s2Rot qB = bodyB->rot;
+
+            // Solve point-to-point constraint.
+            {
+                s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+
+                s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+
+                float c = separation.x; // s2Length(separation);
+                s2Vec2 n = s2MakeVec2(1, 0); //s2Normalize(separation);
+                
+                float mA = joint->invMassA, mB = joint->invMassB;
+
+                if (mA == 0.0f && mB == 0.0f)
+                {
+                    // static connection
+                    return;
+                }
+
+                float iA = joint->invIA, iB = joint->invIB;
+
+                float rnA = s2Cross(rA, n);
+                float rnB = s2Cross(rB, n);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rnA * rnA;
+                float kB = mB + iB * rnB * rnB;
+
+                assert(kA + kB > 0.0f);
+
+                //float lambda = -c / (kA + kB);
+                float lambda = -c / (kA + kB + compliance);
+
+                s2Vec2 p = s2MulSV(lambda, n);
+
+                dcA = s2MulSub(dcA, mA, p);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+                dcB = s2MulAdd(dcB, mB, p);
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+            }
+
+            bodyA->deltaPosition = dcA;
+            bodyA->rot = qA;
+            bodyB->deltaPosition = dcB;
+            bodyB->rot = qB;
+        }
+
+    } else if (type >= 5) {
+
+        // y
+        
+        s2Vec2 dcA = bodyA->deltaPosition;
+        s2Rot qA = bodyA->rot;
+        s2Vec2 dcB = bodyB->deltaPosition;
+        s2Rot qB = bodyB->rot;
+
+        s2Vec2 rA = s2RotateVector(qA, joint->localAnchorA);
+        s2Vec2 rB = s2RotateVector(qB, joint->localAnchorB);
+
+        s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+        
+        // Solve point-to-point constraint.
+        {
+
+            float c = separation.y; // s2Length(separation);
+            s2Vec2 n = s2MakeVec2(0, 1); //s2Normalize(separation);
+            
+            float mA = joint->invMassA, mB = joint->invMassB;
+
+            if (mA == 0.0f && mB == 0.0f)
+            {
+                // static connection
+                return;
+            }
+
+            float iA = joint->invIA, iB = joint->invIB;
+
+            float rnA = s2Cross(rA, n);
+            float rnB = s2Cross(rB, n);
+
+            // w1 and w2 in paper
+            float kA = mA + iA * rnA * rnA;
+            float kB = mB + iB * rnB * rnB;
+
+            assert(kA + kB > 0.0f);
+
+            //float lambda = -c / (kA + kB);
+            float lambda = -c / (kA + kB + compliance);
+
+            s2Vec2 p = s2MulSV(lambda, n);
+
+            dcA = s2MulSub(dcA, mA, p);
+            qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+            dcB = s2MulAdd(dcB, mB, p);
+            qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+        }
+
+        // x
+
+        // Solve point-to-point constraint.
+        {
+
+            float c = separation.x; // s2Length(separation);
+            s2Vec2 n = s2MakeVec2(1, 0); //s2Normalize(separation);
+            
+            float mA = joint->invMassA, mB = joint->invMassB;
+
+            if (mA == 0.0f && mB == 0.0f)
+            {
+                // static connection
+                return;
+            }
+
+            float iA = joint->invIA, iB = joint->invIB;
+
+            float rnA = s2Cross(rA, n);
+            float rnB = s2Cross(rB, n);
+
+            // w1 and w2 in paper
+            float kA = mA + iA * rnA * rnA;
+            float kB = mB + iB * rnB * rnB;
+
+            assert(kA + kB > 0.0f);
+
+            //float lambda = -c / (kA + kB);
+            float lambda = -c / (kA + kB + compliance);
+
+            s2Vec2 p = s2MulSV(lambda, n);
+
+            dcA = s2MulSub(dcA, mA, p);
+            qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+            dcB = s2MulAdd(dcB, mB, p);
+            qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+        }
+
+        bodyA->deltaPosition = dcA;
+        bodyA->rot = qA;
+        bodyB->deltaPosition = dcB;
+        bodyB->rot = qB;
+
+    }
 }
 
 void s2RevoluteJoint_EnableLimit(s2JointId jointId, bool enableLimit)

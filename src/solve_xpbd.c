@@ -90,7 +90,7 @@ static void s2PrepareContacts_XPBD(s2World* world, s2ContactConstraint* constrai
 	}
 }
 
-static void s2SolveContactPositions_XPBD(s2World* world, s2ContactConstraint* constraints, int constraintCount, float h)
+static void s2SolveContactPositions_XPBD(s2World* world, s2ContactConstraint* constraints, int constraintCount, float h, s2StepContext* context, int substep, int substepCount)
 {
 	s2Body* bodies = world->bodies;
 	float inv_h = h > 0.0f ? 1.0f / h : 0.0f;
@@ -100,8 +100,12 @@ static void s2SolveContactPositions_XPBD(s2World* world, s2ContactConstraint* co
 	// but the rush sample has too much overlap ...
 	float baseCompliance = 0.0f;
 
-	for (int i = 0; i < constraintCount; ++i)
+	for (int ii = 0; ii < constraintCount; ++ii)
 	{
+        int prime = 10889;
+        S2_ASSERT(constraintCount < prime);
+        int i = (ii * prime + constraintCount / 3 + (substep * (constraintCount / 2)) / substepCount) % constraintCount;
+
 		s2ContactConstraint* constraint = constraints + i;
 
 		s2Body* bodyA = bodies + constraint->indexA;
@@ -123,98 +127,305 @@ static void s2SolveContactPositions_XPBD(s2World* world, s2ContactConstraint* co
 		s2Vec2 normal = constraint->normal;
 		s2Vec2 tangent = s2CrossVS(normal, 1.0f);
 
-		// non-penetration constraints
-		for (int j = 0; j < pointCount; ++j)
-		{
-			s2ContactConstraintPoint* cp = constraint->points + j;
+        int type = context->extraIterations;
 
-			s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
-			s2Vec2 rB = s2RotateVector(qB, cp->localAnchorB);
-			s2Vec2 drA = s2Sub(rA, cp->rA0);
-			s2Vec2 drB = s2Sub(rB, cp->rB0);
+        // non-penetration constraints
+        for (int j = 0; j < pointCount; ++j)
+        {
+            if (type >= 5) {
+                s2ContactConstraintPoint* cp = constraint->points + j;
 
-			// change in separation
-			s2Vec2 ds = s2Add(s2Sub(dcB, dcA), s2Sub(drB, drA));
-			float C = s2Dot(ds, normal) + cp->separation;
-			if (C > 0)
-			{
-				cp->normalImpulse = 0.0f;
-				continue;
-			}
+                s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, cp->localAnchorB);
+                s2Vec2 drA = s2Sub(rA, cp->rA0);
+                s2Vec2 drB = s2Sub(rB, cp->rB0);
+                s2Vec2 ds = s2Add(s2Sub(dcB, dcA), s2Sub(drB, drA));
+                s2Vec2 sep2d = s2MulSV(s2Dot(ds, normal) + cp->separation, normal);
 
-			// this clamping is not in the paper, but it is used in other solvers
-			//float C_clamped = S2_MAX(-s2_maxBaumgarteVelocity * h, C);
+                // Just for computing normalImpulse.
+                {
+                    // change in separation
+                    float C = s2Dot(ds, normal) + cp->separation;
+                    if (C > 0)
+                    {
+                        cp->normalImpulse = 0.0f;
+                        continue;
+                    }
 
-			float rnA = s2Cross(rA, normal);
-			float rnB = s2Cross(rB, normal);
+                    // this clamping is not in the paper, but it is used in other solvers
+                    //float C_clamped = S2_MAX(-s2_maxBaumgarteVelocity * h, C);
 
-			// w1 and w2 in paper
-			float kA = mA + iA * rnA * rnA;
-			float kB = mB + iB * rnB * rnB;
+                    float rnA = s2Cross(rA, normal);
+                    float rnB = s2Cross(rB, normal);
 
-			//float lambda = -C_clamped / (kA + kB + compliance);
-			float lambda = -C / (kA + kB + compliance);
-			cp->normalImpulse = lambda;
+                    // w1 and w2 in paper
+                    float kA = mA + iA * rnA * rnA;
+                    float kB = mB + iB * rnB * rnB;
 
-			s2Vec2 P = s2MulSV(lambda, normal);
+                    //float lambda = -C_clamped / (kA + kB + compliance);
+                    float lambda = -C / (kA + kB + compliance);
+                    cp->normalImpulse = lambda;
 
-			dcA = s2MulSub(dcA, mA, P);
-			qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
-			if (s2Length(dcA) > 1.0f)
-			{
-				dcA.x += 0.0f;
-			}
+                    // s2Vec2 P = s2MulSV(lambda, normal);
 
-			dcB = s2MulAdd(dcB, mB, P);
-			if (s2Length(dcB) > 1.0f)
-			{
-				dcB.x += 0.0f;
-			}
+                    // dcA = s2MulSub(dcA, mA, P);
+                    // qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+                    // if (s2Length(dcA) > 1.0f)
+                    // {
+                    //     dcA.x += 0.0f;
+                    // }
 
-			qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
-		}
+                    // dcB = s2MulAdd(dcB, mB, P);
+                    // if (s2Length(dcB) > 1.0f)
+                    // {
+                    //     dcB.x += 0.0f;
+                    // }
+
+                    // qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+                }
+
+                {
+                    s2Vec2 normal = s2MakeVec2(0, 1);
+
+                    // change in separation
+                    float C = sep2d.y;
+                    // if (C > 0)
+                    // {
+                    //     cp->normalImpulse = 0.0f;
+                    //     continue;
+                    // }
+
+                    // this clamping is not in the paper, but it is used in other solvers
+                    //float C_clamped = S2_MAX(-s2_maxBaumgarteVelocity * h, C);
+
+                    float rnA = s2Cross(rA, normal);
+                    float rnB = s2Cross(rB, normal);
+
+                    // w1 and w2 in paper
+                    float kA = mA + iA * rnA * rnA;
+                    float kB = mB + iB * rnB * rnB;
+
+                    //float lambda = -C_clamped / (kA + kB + compliance);
+                    float lambda = -C / (kA + kB + compliance);
+                    // cp->normalImpulse = lambda;
+
+                    s2Vec2 P = s2MulSV(lambda, normal);
+
+                    dcA = s2MulSub(dcA, mA, P);
+                    qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+                    if (s2Length(dcA) > 1.0f)
+                    {
+                        dcA.x += 0.0f;
+                    }
+
+                    dcB = s2MulAdd(dcB, mB, P);
+                    if (s2Length(dcB) > 1.0f)
+                    {
+                        dcB.x += 0.0f;
+                    }
+
+                    qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+                }
+
+                {
+                    s2Vec2 normal = s2MakeVec2(1, 0);
+
+                    // change in separation
+                    float C = sep2d.x;
+                    // if (C > 0)
+                    // {
+                    //     cp->normalImpulse = 0.0f;
+                    //     continue;
+                    // }
+
+                    // this clamping is not in the paper, but it is used in other solvers
+                    //float C_clamped = S2_MAX(-s2_maxBaumgarteVelocity * h, C);
+
+                    float rnA = s2Cross(rA, normal);
+                    float rnB = s2Cross(rB, normal);
+
+                    // w1 and w2 in paper
+                    float kA = mA + iA * rnA * rnA;
+                    float kB = mB + iB * rnB * rnB;
+
+                    //float lambda = -C_clamped / (kA + kB + compliance);
+                    float lambda = -C / (kA + kB + compliance);
+                    // cp->normalImpulse = lambda;
+
+                    s2Vec2 P = s2MulSV(lambda, normal);
+
+                    dcA = s2MulSub(dcA, mA, P);
+                    qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+                    if (s2Length(dcA) > 1.0f)
+                    {
+                        dcA.x += 0.0f;
+                    }
+
+                    dcB = s2MulAdd(dcB, mB, P);
+                    if (s2Length(dcB) > 1.0f)
+                    {
+                        dcB.x += 0.0f;
+                    }
+
+                    qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+                }
+            } else {
+                s2ContactConstraintPoint* cp = constraint->points + j;
+
+                s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, cp->localAnchorB);
+                s2Vec2 drA = s2Sub(rA, cp->rA0);
+                s2Vec2 drB = s2Sub(rB, cp->rB0);
+
+                // change in separation
+                s2Vec2 ds = s2Add(s2Sub(dcB, dcA), s2Sub(drB, drA));
+                float C = s2Dot(ds, normal) + cp->separation;
+                if (C > 0)
+                {
+                    cp->normalImpulse = 0.0f;
+                    continue;
+                }
+
+                // this clamping is not in the paper, but it is used in other solvers
+                //float C_clamped = S2_MAX(-s2_maxBaumgarteVelocity * h, C);
+
+                float rnA = s2Cross(rA, normal);
+                float rnB = s2Cross(rB, normal);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rnA * rnA;
+                float kB = mB + iB * rnB * rnB;
+
+                //float lambda = -C_clamped / (kA + kB + compliance);
+                float lambda = -C / (kA + kB + compliance);
+                cp->normalImpulse = lambda;
+
+                s2Vec2 P = s2MulSV(lambda, normal);
+
+                dcA = s2MulSub(dcA, mA, P);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+                if (s2Length(dcA) > 1.0f)
+                {
+                    dcA.x += 0.0f;
+                }
+
+                dcB = s2MulAdd(dcB, mB, P);
+                if (s2Length(dcB) > 1.0f)
+                {
+                    dcB.x += 0.0f;
+                }
+
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+            }
+        }
 
 		// static friction constraints
 		float friction = constraint->friction;
 
 		for (int j = 0; j < pointCount; ++j)
 		{
-			s2ContactConstraintPoint* cp = constraint->points + j;
+            s2ContactConstraintPoint* cp = constraint->points + j;
 
-			s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
-			s2Vec2 rB = s2RotateVector(qB, cp->localAnchorB);
-			s2Vec2 drA = s2Sub(rA, cp->rA0);
-			s2Vec2 drB = s2Sub(rB, cp->rB0);
+            s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
+            s2Vec2 rB = s2RotateVector(qB, cp->localAnchorB);
+            s2Vec2 drA = s2Sub(rA, cp->rA0);
+            s2Vec2 drB = s2Sub(rB, cp->rB0);
 
-			// tangent separation
-			s2Vec2 dp = s2Add(s2Sub(dcB, dcA), s2Sub(drB, drA));
-			float C = s2Dot(dp, tangent);
+            // tangent separation
+            s2Vec2 dp = s2Add(s2Sub(dcB, dcA), s2Sub(drB, drA));
+            s2Vec2 separation2d = s2MulSV(s2Dot(dp, tangent), tangent);
+            
+            if (type == 6) {
+                {
+                    s2Vec2 tangent = s2MakeVec2(1, 0);
+                    float C = separation2d.x;
 
-			float rtA = s2Cross(rA, tangent);
-			float rtB = s2Cross(rB, tangent);
+                    float rtA = s2Cross(rA, tangent);
+                    float rtB = s2Cross(rB, tangent);
 
-			// w1 and w2 in paper
-			float kA = mA + iA * rtA * rtA;
-			float kB = mB + iB * rtB * rtB;
+                    // w1 and w2 in paper
+                    float kA = mA + iA * rtA * rtA;
+                    float kB = mB + iB * rtB * rtB;
 
-			float lambda = -C / (kA + kB);
+                    float lambda = -C / (kA + kB);
 
-			float maxLambda = friction * cp->normalImpulse;
-			if (lambda < -maxLambda || maxLambda < lambda)
-			{
-				cp->tangentImpulse = 0.0f;
-				continue;
-			}
+                    float maxLambda = friction * cp->normalImpulse;
+                    if (lambda < -maxLambda || maxLambda < lambda)
+                    {
+                        cp->tangentImpulse = 0.0f;
+                        continue;
+                    }
 
-			cp->tangentImpulse = lambda;
+                    cp->tangentImpulse = lambda;
 
-			s2Vec2 P = s2MulSV(lambda, tangent);
+                    s2Vec2 P = s2MulSV(lambda, tangent);
 
-			dcA = s2MulSub(dcA, mA, P);
-			qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+                    dcA = s2MulSub(dcA, mA, P);
+                    qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
 
-			dcB = s2MulAdd(dcB, mB, P);
-			qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+                    dcB = s2MulAdd(dcB, mB, P);
+                    qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+                }
+
+                {
+                    s2Vec2 tangent = s2MakeVec2(0, 1);
+                    float C = separation2d.y;
+
+                    float rtA = s2Cross(rA, tangent);
+                    float rtB = s2Cross(rB, tangent);
+
+                    // w1 and w2 in paper
+                    float kA = mA + iA * rtA * rtA;
+                    float kB = mB + iB * rtB * rtB;
+
+                    float lambda = -C / (kA + kB);
+
+                    float maxLambda = friction * cp->normalImpulse;
+                    if (lambda < -maxLambda || maxLambda < lambda)
+                    {
+                        cp->tangentImpulse = 0.0f;
+                        continue;
+                    }
+
+                    cp->tangentImpulse = lambda;
+
+                    s2Vec2 P = s2MulSV(lambda, tangent);
+
+                    dcA = s2MulSub(dcA, mA, P);
+                    qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+
+                    dcB = s2MulAdd(dcB, mB, P);
+                    qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+                }
+            } else {
+                float C = s2Dot(dp, tangent);
+
+                float rtA = s2Cross(rA, tangent);
+                float rtB = s2Cross(rB, tangent);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rtA * rtA;
+                float kB = mB + iB * rtB * rtB;
+
+                float lambda = -C / (kA + kB);
+
+                float maxLambda = friction * cp->normalImpulse;
+                if (lambda < -maxLambda || maxLambda < lambda)
+                {
+                    cp->tangentImpulse = 0.0f;
+                    continue;
+                }
+
+                cp->tangentImpulse = lambda;
+
+                s2Vec2 P = s2MulSV(lambda, tangent);
+
+                dcA = s2MulSub(dcA, mA, P);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+
+                dcB = s2MulAdd(dcB, mB, P);
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+            }
 		}
 
 		bodyA->deltaPosition = dcA;
@@ -224,14 +435,20 @@ static void s2SolveContactPositions_XPBD(s2World* world, s2ContactConstraint* co
 	}
 }
 
-static void s2SolveContactVelocities_XPBD(s2World* world, s2ContactConstraint* constraints, int constraintCount, float h)
+static void s2SolveContactVelocities_XPBD(s2World* world, s2ContactConstraint* constraints, int constraintCount, float h, s2StepContext* context, int substep, int substepCount)
 {
 	s2Body* bodies = world->bodies;
 	float threshold = 2.0f * s2Length(world->gravity) * h;
 	float inv_h = h > 0.0f ? 1.0f / h : 0.0f;
 
-	for (int i = 0; i < constraintCount; ++i)
+    int type = context->extraIterations;
+
+	for (int ii = 0; ii < constraintCount; ++ii)
 	{
+        int prime = 10889;
+        S2_ASSERT(constraintCount < prime);
+        int i = (ii * prime + constraintCount / 3 + (substep * (constraintCount / 2)) / substepCount) % constraintCount;
+
 		s2ContactConstraint* constraint = constraints + i;
 
 		s2Body* bodyA = bodies + constraint->indexA;
@@ -308,34 +525,134 @@ static void s2SolveContactVelocities_XPBD(s2World* world, s2ContactConstraint* c
 			s2Vec2 vrB = s2Add(vB, s2CrossSV(wB, rB));
 			s2Vec2 vrA = s2Add(vA, s2CrossSV(wA, rA));
 			s2Vec2 dv = s2Sub(vrB, vrA);
+            s2Vec2 separation2d = s2MulSV(s2Dot(dv, tangent), tangent);
 
-			// Compute tangent force
-			float vt = s2Dot(dv, tangent);
-			if (vt == 0.0f)
-			{
-				continue;
-			}
+            if (type == 6) {
 
-			// eq 31
-			cp->tangentImpulse = friction * cp->normalImpulse;
-			float huf = cp->tangentImpulse * inv_h;
-			float abs_vt = S2_ABS(vt);
-			float Cdot = (vt / abs_vt) * S2_MIN(huf, abs_vt);
+                {
+                    // Compute tangent force
+                    float vt = s2Dot(dv, tangent);
+                    if (vt == 0.0f)
+                    {
+                        continue;
+                    }
 
-			float rtA = s2Cross(rA, tangent);
-			float rtB = s2Cross(rB, tangent);
+                    // eq 31
+                    cp->tangentImpulse = friction * cp->normalImpulse;
+                    // float huf = cp->tangentImpulse * inv_h;
+                    // float abs_vt = S2_ABS(vt);
 
-			// w1 and w2 in paper
-			float kA = mA + iA * rtA * rtA;
-			float kB = mB + iB * rtB * rtB;
+                    // float rtA = s2Cross(rA, tangent);
+                    // float rtB = s2Cross(rB, tangent);
 
-			float lambda = -Cdot / (kA + kB);
+                    // // w1 and w2 in paper
+                    // float kA = mA + iA * rtA * rtA;
+                    // float kB = mB + iB * rtB * rtB;
 
-			s2Vec2 P = s2MulSV(lambda, tangent);
-			vA = s2MulSub(vA, mA, P);
-			wA -= iA * s2Cross(rA, P);
-			vB = s2MulAdd(vB, mB, P);
-			wB += iB * s2Cross(rB, P);
+                    // float Cdot = (vt / abs_vt) * S2_MIN(huf, abs_vt / (kA + kB));
+
+                    // float lambda = -Cdot; // / (kA + kB);
+
+                    // s2Vec2 P = s2MulSV(lambda, tangent);
+                    // vA = s2MulSub(vA, mA, P);
+                    // wA -= iA * s2Cross(rA, P);
+                    // vB = s2MulAdd(vB, mB, P);
+                    // wB += iB * s2Cross(rB, P);
+                }
+
+                {
+                    s2Vec2 tangent = s2MakeVec2(1, 0);
+                    // Compute tangent force
+                    float vt = separation2d.x;
+                    if (vt != 0.0f)
+                    {
+
+                        // eq 31
+                        // cp->tangentImpulse = friction * cp->normalImpulse;
+                        float huf = cp->tangentImpulse * inv_h;
+                        float abs_vt = S2_ABS(vt);
+
+                        float rtA = s2Cross(rA, tangent);
+                        float rtB = s2Cross(rB, tangent);
+
+                        // w1 and w2 in paper
+                        float kA = mA + iA * rtA * rtA;
+                        float kB = mB + iB * rtB * rtB;
+
+                        float Cdot = (vt / abs_vt) * S2_MIN(huf, abs_vt / (kA + kB));
+
+                        float lambda = -Cdot; // / (kA + kB);
+
+                        s2Vec2 P = s2MulSV(lambda, tangent);
+                        vA = s2MulSub(vA, mA, P);
+                        wA -= iA * s2Cross(rA, P);
+                        vB = s2MulAdd(vB, mB, P);
+                        wB += iB * s2Cross(rB, P);
+                    }
+                }
+
+                {
+                    s2Vec2 tangent = s2MakeVec2(0, 1);
+                    // Compute tangent force
+                    float vt = separation2d.y;
+                    if (vt != 0.0f)
+                    {
+                        // eq 31
+                        // cp->tangentImpulse = friction * cp->normalImpulse;
+                        float huf = cp->tangentImpulse * inv_h;
+                        float abs_vt = S2_ABS(vt);
+
+                        float rtA = s2Cross(rA, tangent);
+                        float rtB = s2Cross(rB, tangent);
+
+                        // w1 and w2 in paper
+                        float kA = mA + iA * rtA * rtA;
+                        float kB = mB + iB * rtB * rtB;
+
+                        float Cdot = (vt / abs_vt) * S2_MIN(huf, abs_vt / (kA + kB));
+
+                        float lambda = -Cdot; // / (kA + kB);
+
+                        s2Vec2 P = s2MulSV(lambda, tangent);
+                        vA = s2MulSub(vA, mA, P);
+                        wA -= iA * s2Cross(rA, P);
+                        vB = s2MulAdd(vB, mB, P);
+                        wB += iB * s2Cross(rB, P);
+                    }
+                }
+
+            } else {
+
+                // Compute tangent force
+                float vt = s2Dot(dv, tangent);
+                if (vt == 0.0f)
+                {
+                    continue;
+                }
+
+                // eq 31
+                cp->tangentImpulse = friction * cp->normalImpulse;
+                float huf = cp->tangentImpulse * inv_h;
+                float abs_vt = S2_ABS(vt);
+
+                float rtA = s2Cross(rA, tangent);
+                float rtB = s2Cross(rB, tangent);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rtA * rtA;
+                float kB = mB + iB * rtB * rtB;
+
+                float Cdot = (vt / abs_vt) * S2_MIN(huf, abs_vt / (kA + kB));
+
+                float lambda = -Cdot; // / (kA + kB);
+
+                s2Vec2 P = s2MulSV(lambda, tangent);
+                vA = s2MulSub(vA, mA, P);
+                wA -= iA * s2Cross(rA, P);
+                vB = s2MulAdd(vB, mB, P);
+                wB += iB * s2Cross(rB, P);
+
+            }
 		}
 
 		bodyA->linearVelocity = vA;
@@ -346,7 +663,7 @@ static void s2SolveContactVelocities_XPBD(s2World* world, s2ContactConstraint* c
 }
 
 // Detailed Rigid Body Simulation with Extended Position Based Dynamics, 2020
-// Matthias Müller, Miles Macklin, Nuttapong Chentanez, Stefan Jeschke, Tae-Yong Kim
+// Matthias Mï¿½ller, Miles Macklin, Nuttapong Chentanez, Stefan Jeschke, Tae-Yong Kim
 void s2Solve_XPBD(s2World* world, s2StepContext* context)
 {
 	int substepCount = context->iterations;
@@ -466,7 +783,7 @@ void s2Solve_XPBD(s2World* world, s2StepContext* context)
 			s2SolveJoint_XPBD(joint, context, inv_h);
 		}
 
-		s2SolveContactPositions_XPBD(world, constraints, constraintCount, h);
+		s2SolveContactPositions_XPBD(world, constraints, constraintCount, h, context, substep, substepCount);
 
 		// Project velocities
 		for (int i = 0; i < bodyCapacity; ++i)
@@ -496,7 +813,7 @@ void s2Solve_XPBD(s2World* world, s2StepContext* context)
 		}
 
 		// Relax contact velocities
-		s2SolveContactVelocities_XPBD(world, constraints, constraintCount, h);
+		s2SolveContactVelocities_XPBD(world, constraints, constraintCount, h, context, substep, substepCount);
 	}
 
 	// Finalize body position
