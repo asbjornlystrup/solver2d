@@ -9,6 +9,10 @@
 #include <stdio.h>
 #endif
 
+#define _WIN64 1
+#define __x86_64__ 1
+#define __clang__ 1
+
 // Define platform
 #if defined(_WIN64)
 #define S2_PLATFORM_WINDOWS
