@@ -117,5 +117,5 @@ void Settings::Load()
 
 	free(data);
 
-	enabledSolvers[s2_solverXPBD] = true;
+	enabledSolvers[s2_solverPGS] = true;
 }

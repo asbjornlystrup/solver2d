@@ -132,7 +132,65 @@ static void s2SolveContactPositions_XPBD(s2World* world, s2ContactConstraint* co
         // non-penetration constraints
         for (int j = 0; j < pointCount; ++j)
         {
-            if (type >= 5) {
+            if (type == 1) {
+
+                s2ContactConstraintPoint* cp = constraint->points + j;
+
+                s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
+                s2Vec2 rB = s2RotateVector(qB, cp->localAnchorB);
+                s2Vec2 drA = s2Sub(rA, cp->rA0);
+                s2Vec2 drB = s2Sub(rB, cp->rB0);
+
+                // change in separation
+                s2Vec2 ds = s2Add(s2Sub(dcB, dcA), s2Sub(drB, drA));
+                float C = s2Dot(ds, normal) + cp->separation;
+                if (C > 0)
+                {
+                    cp->normalImpulse = 0.0f;
+                    continue;
+                }
+
+                // this clamping is not in the paper, but it is used in other solvers
+                //float C_clamped = S2_MAX(-s2_maxBaumgarteVelocity * h, C);
+
+                float rnA = s2Cross(rA, normal);
+                float rnB = s2Cross(rB, normal);
+
+                // w1 and w2 in paper
+                float kA = mA + iA * rnA * rnA;
+                float kB = mB + iB * rnB * rnB;
+
+                //float lambda = -C_clamped / (kA + kB + compliance);
+                float lambda = -C / (kA + kB + compliance);
+                cp->normalImpulse = lambda;
+
+                // s2Vec2 P = s2MulSV(lambda, normal);
+                s2Mat22 K;
+                K.cx.x = mA + mB + iA * rA.y * rA.y + iB * rB.y * rB.y;
+                K.cx.y = -iA * rA.x * rA.y - iB * rB.x * rB.y;
+                K.cy.x = K.cx.y;
+                K.cy.y = mA + mB + iA * rA.x * rA.x + iB * rB.x * rB.x;
+                s2Vec2 P = s2Solve22(K, s2Neg(s2Add(ds, s2MulSV(cp->separation, normal))));
+                // s2Vec2 P = s2Solve22(K, s2Neg(s2MulSV(C, normal)));
+                // s2Vec2 P = s2Solve22(K, s2Neg(ds));
+                cp->normalImpulse = s2Length(P);
+
+                dcA = s2MulSub(dcA, mA, P);
+                qA = s2IntegrateRot(qA, -iA * s2Cross(rA, P));
+                if (s2Length(dcA) > 1.0f)
+                {
+                    dcA.x += 0.0f;
+                }
+
+                dcB = s2MulAdd(dcB, mB, P);
+                if (s2Length(dcB) > 1.0f)
+                {
+                    dcB.x += 0.0f;
+                }
+
+                qB = s2IntegrateRot(qB, iB * s2Cross(rB, P));
+
+            } else if (type >= 5) {
                 s2ContactConstraintPoint* cp = constraint->points + j;
 
                 s2Vec2 rA = s2RotateVector(qA, cp->localAnchorA);
