@@ -420,6 +420,18 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 	s2Vec2 vB = bodyB->linearVelocity;
 	float wB = bodyB->angularVelocity;
 
+    if (useXPBD) {
+        // vA = bodyA->linearVelocity0;
+	    // wA = bodyA->angularVelocity0;
+	    // vB = bodyB->linearVelocity0;
+	    // wB = bodyB->angularVelocity0;
+    }
+
+    s2Vec2 vAStart = vA;
+    float wAStart = wA;
+    s2Vec2 vBStart = vB;
+    float wBStart = wB;
+
 	float mA = joint->invMassA, mB = joint->invMassB;
 	float iA = joint->invIA, iB = joint->invIB;
 
@@ -432,11 +444,23 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 		float impulse = -joint->axialMass * Cdot;
 		float oldImpulse = joint->motorImpulse;
 		float maxImpulse = h * joint->maxMotorTorque;
-		joint->motorImpulse = S2_CLAMP(joint->motorImpulse + impulse, -maxImpulse, maxImpulse);
+        if (!useXPBD) {
+        }
+        joint->motorImpulse = S2_CLAMP(joint->motorImpulse + impulse, -maxImpulse, maxImpulse);
 		impulse = joint->motorImpulse - oldImpulse;
 
-		wA -= iA * impulse;
-		wB += iB * impulse;
+        if (useXPBD) {
+            bodyA->rot = s2IntegrateRot(bodyA->rot, -iA * impulse * h);
+            bodyB->rot = s2IntegrateRot(bodyB->rot, iB * impulse * h);
+            
+            bodyA->angularVelocity = s2ComputeAngularVelocity(bodyA->rot0, bodyA->rot, inv_h);
+            bodyB->angularVelocity = s2ComputeAngularVelocity(bodyB->rot0, bodyB->rot, inv_h);
+            wA = bodyA->angularVelocity;
+	        wB = bodyB->angularVelocity;
+        } else {
+            wA -= iA * impulse;
+            wB += iB * impulse;
+        }
 	}
 
 	if (joint->enableLimit && fixedRotation == false)
@@ -464,11 +488,23 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 			float Cdot = wB - wA;
 			float impulse = -joint->axialMass * massScale * (Cdot + bias) - impulseScale * joint->lowerImpulse;
 			float oldImpulse = joint->lowerImpulse;
-			joint->lowerImpulse = S2_MAX(joint->lowerImpulse + impulse, 0.0f);
+            if (!useXPBD) {
+            }
+            joint->lowerImpulse = S2_MAX(joint->lowerImpulse + impulse, 0.0f);
 			impulse = joint->lowerImpulse - oldImpulse;
 
-			wA -= iA * impulse;
-			wB += iB * impulse;
+            if (useXPBD) {
+                bodyA->rot = s2IntegrateRot(bodyA->rot, -iA * impulse * h);
+                bodyB->rot = s2IntegrateRot(bodyB->rot, iB * impulse * h);
+
+                bodyA->angularVelocity = s2ComputeAngularVelocity(bodyA->rot0, bodyA->rot, inv_h);
+                bodyB->angularVelocity = s2ComputeAngularVelocity(bodyB->rot0, bodyB->rot, inv_h);
+                wA = bodyA->angularVelocity;
+                wB = bodyB->angularVelocity;
+            } else {
+                wA -= iA * impulse;
+                wB += iB * impulse;
+            }
 		}
 
 		// Upper limit
@@ -495,11 +531,23 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 			float Cdot = wA - wB;
 			float impulse = -joint->axialMass * massScale * (Cdot + bias) - impulseScale * joint->lowerImpulse;
 			float oldImpulse = joint->upperImpulse;
-			joint->upperImpulse = S2_MAX(joint->upperImpulse + impulse, 0.0f);
+			if (!useXPBD) {
+            }
+            joint->upperImpulse = S2_MAX(joint->upperImpulse + impulse, 0.0f);
 			impulse = joint->upperImpulse - oldImpulse;
 
-			wA += iA * impulse;
-			wB -= iB * impulse;
+            if (useXPBD) {
+                bodyA->rot = s2IntegrateRot(bodyA->rot, iA * impulse * h);
+                bodyB->rot = s2IntegrateRot(bodyB->rot, -iB * impulse * h);
+
+                bodyA->angularVelocity = s2ComputeAngularVelocity(bodyA->rot0, bodyA->rot, inv_h);
+                bodyB->angularVelocity = s2ComputeAngularVelocity(bodyB->rot0, bodyB->rot, inv_h);
+                wA = bodyA->angularVelocity;
+                wB = bodyB->angularVelocity;
+            } else {
+                wA += iA * impulse;
+                wB -= iB * impulse;
+            }
 		}
 	}
 
@@ -514,15 +562,15 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 
 		s2Vec2 Cdot = s2Sub(s2Add(vB, s2CrossSV(wB, rB)), s2Add(vA, s2CrossSV(wA, rA)));
 
+        s2Vec2 dcA = bodyA->deltaPosition;
+		s2Vec2 dcB = bodyB->deltaPosition;
+        s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
+
 		s2Vec2 bias = s2Vec2_zero;
 		float massScale = 1.0f;
 		float impulseScale = 0.0f;
 		if (useBias)
 		{
-			s2Vec2 dcA = bodyA->deltaPosition;
-			s2Vec2 dcB = bodyB->deltaPosition;
-
-			s2Vec2 separation = s2Add(s2Add(s2Sub(dcB, dcA), s2Sub(rB, rA)), joint->centerDiff0);
 			bias = s2MulSV(joint->biasCoefficient, separation);
 			massScale = joint->massCoefficient;
 			impulseScale = joint->impulseCoefficient;
@@ -535,15 +583,34 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 		K.cx.y = K.cy.x;
 		K.cy.y = mA + mB + rA.x * rA.x * iA + rB.x * rB.x * iB;
 		s2Vec2 b = s2Solve22(K, s2Add(Cdot, bias));
+        if (useXPBD) {
+            b = s2Solve22(K, s2Neg(separation));
+        }
 #else
 		s2Vec2 b = s2MulMV(joint->pivotMass, s2Add(Cdot, bias));
 #endif
 
 		s2Vec2 impulse;
-		impulse.x = -massScale * b.x - impulseScale * joint->impulse.x;
-		impulse.y = -massScale * b.y - impulseScale * joint->impulse.y;
-		joint->impulse.x += impulse.x;
-		joint->impulse.y += impulse.y;
+        if (useXPBD) {
+            impulse = b;
+
+            bodyA->deltaPosition = s2Sub(bodyA->deltaPosition, s2MulSV(mA, impulse));
+            bodyA->rot = s2IntegrateRot(bodyA->rot, -iA * s2Cross(rA, impulse));
+            bodyB->deltaPosition = s2Add(bodyB->deltaPosition, s2MulSV(mB, impulse));
+            bodyB->rot = s2IntegrateRot(bodyB->rot, iB * s2Cross(rB, impulse));
+
+            // dcA = s2MulSub(dcA, mA, p);
+            // qA = s2IntegrateRot(qA, -iA * s2Cross(rA, p));
+
+            // dcB = s2MulAdd(dcB, mB, p);
+            // qB = s2IntegrateRot(qB, iB * s2Cross(rB, p));
+
+        } else {
+            impulse.x = -massScale * b.x - impulseScale * joint->impulse.x;
+            impulse.y = -massScale * b.y - impulseScale * joint->impulse.y;
+            joint->impulse.x += impulse.x;
+            joint->impulse.y += impulse.y;
+        }
 
 		vA = s2MulSub(vA, mA, impulse);
 		wA -= iA * s2Cross(rA, impulse);
@@ -551,10 +618,27 @@ void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float 
 		wB += iB * s2Cross(rB, impulse);
 	}
 
-	bodyA->linearVelocity = vA;
-	bodyA->angularVelocity = wA;
-	bodyB->linearVelocity = vB;
-	bodyB->angularVelocity = wB;
+    if (useXPBD)
+    {
+        
+
+        // bodyA->linearVelocity = vA;
+        // bodyA->angularVelocity = wA;
+        // bodyB->linearVelocity = vB;
+        // bodyB->angularVelocity = wB;
+        
+        bodyA->linearVelocity = s2MulSV(inv_h, s2Sub(bodyA->deltaPosition, bodyA->deltaPosition0));
+        bodyB->linearVelocity = s2MulSV(inv_h, s2Sub(bodyB->deltaPosition, bodyB->deltaPosition0));
+        bodyA->angularVelocity = s2ComputeAngularVelocity(bodyA->rot0, bodyA->rot, inv_h);
+        bodyB->angularVelocity = s2ComputeAngularVelocity(bodyB->rot0, bodyB->rot, inv_h);
+    }
+    else
+    {
+        bodyA->linearVelocity = vA;
+        bodyA->angularVelocity = wA;
+        bodyB->linearVelocity = vB;
+        bodyB->angularVelocity = wB;
+    }
 }
 
 // similar to box2d_lite

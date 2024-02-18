@@ -227,7 +227,7 @@ void s2Solve_TGS_Soft_XPBD(s2World* world, s2StepContext* context)
 				continue;
 			}
 
-			s2SolveJoint_Soft(joint, context, h, inv_h, useBias, true);
+			s2SolveJoint_Soft(joint, context, h, inv_h, useBias, false);
 		}
 
 		s2SolveContacts_TGS_Soft(world, constraints, constraintCount, inv_h, useBias);
@@ -248,7 +248,7 @@ void s2Solve_TGS_Soft_XPBD(s2World* world, s2StepContext* context)
 
 			s2SolveJoint_Soft(joint, context, h, inv_h, useBias, true);
 		}
-		
+
 		s2SolveContacts_TGS_Soft(world, constraints, constraintCount, inv_h, useBias);
 	}
 

@@ -39,6 +39,9 @@ void s2IntegrateVelocities(s2World* world, float h)
 		v = s2MulSV(1.0f / (1.0f + h * body->linearDamping), v);
 		w *= 1.0f / (1.0f + h * body->angularDamping);
 
+        body->rot0 = body->rot;
+        body->deltaPosition0 = body->deltaPosition;
+
 		body->linearVelocity = v;
 		body->angularVelocity = w;
 	}
@@ -64,6 +67,10 @@ void s2IntegratePositions(s2World* world, float h)
 
 		body->deltaPosition = s2MulAdd(body->deltaPosition, h, body->linearVelocity);
 		body->rot = s2IntegrateRot(body->rot, h * body->angularVelocity);
+
+        // Store these for Soft XPBD joint solving.
+        body->linearVelocity0 = body->linearVelocity;
+		body->angularVelocity0 = body->angularVelocity;
 	}
 }
 
