@@ -80,6 +80,7 @@ typedef enum s2SolverType
 	s2_solverPGS_Soft,
 	s2_solverTGS_Sticky,
 	s2_solverTGS_Soft,
+	s2_solverTGS_Soft_XPBD,
 	s2_solverTGS_NGS,
 	s2_solverXPBD,
 	s2_solverTypeCount,

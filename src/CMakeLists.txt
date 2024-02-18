@@ -34,6 +34,7 @@ set(S2D_SOURCE_FILES
 	solve_pgs_soft.c
 	solve_tgs_ngs.c
 	solve_tgs_soft.c
+	solve_tgs_soft_xpbd.c
 	solve_tgs_sticky.c
 	solve_xpbd.c
 	solvers.h

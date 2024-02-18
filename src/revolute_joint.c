@@ -406,7 +406,7 @@ void s2PrepareRevolute_Soft(s2Joint* base, s2StepContext* context, float h, floa
 	}
 }
 
-void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float inv_h, bool useBias)
+void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float inv_h, bool useBias, bool useXPBD)
 {
 	S2_ASSERT(base->type == s2_revoluteJoint);
 

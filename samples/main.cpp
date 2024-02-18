@@ -432,6 +432,11 @@ static void UpdateUI(s2Color* solverColors)
 			ImGui::Checkbox("TGS Soft", &s_settings.enabledSolvers[s2_solverTGS_Soft]);
 			ImGui::PopStyleColor();
 
+			c = solverColors[s2_solverTGS_Soft_XPBD];
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{c.r, c.g, c.b, c.a});
+			ImGui::Checkbox("TGS Soft / XPBD", &s_settings.enabledSolvers[s2_solverTGS_Soft_XPBD]);
+			ImGui::PopStyleColor();
+
 			c = solverColors[s2_solverTGS_NGS];
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{c.r, c.g, c.b, c.a});
 			ImGui::Checkbox("TGS NGS", &s_settings.enabledSolvers[s2_solverTGS_NGS]);
@@ -669,6 +674,7 @@ int main(int, char**)
 		s2MakeColor(s2_colorCoral, colorAlpha),
 		s2MakeColor(s2_colorLavenderBlush, colorAlpha),
 		s2MakeColor(s2_colorYellow2, colorAlpha),
+		s2MakeColor(s2_colorCyan, colorAlpha),
 		s2MakeColor(s2_colorOrchid, colorAlpha),
 		s2MakeColor(s2_colorSpringGreen, colorAlpha),
 	};

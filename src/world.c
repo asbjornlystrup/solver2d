@@ -185,6 +185,7 @@ void s2World_Step(s2WorldId worldId, float timeStep, int velIters, int posIters,
 	s2SolverType type = world->solverType;
 	if (type == s2_solverXPBD ||
 		type == s2_solverTGS_Soft ||
+		type == s2_solverTGS_Soft_XPBD ||
 		type == s2_solverTGS_Sticky ||
 		type == s2_solverTGS_NGS)
 	{
@@ -231,6 +232,10 @@ void s2World_Step(s2WorldId worldId, float timeStep, int velIters, int posIters,
 
 			case s2_solverTGS_Soft:
 				s2Solve_TGS_Soft(world, &context);
+				break;
+
+			case s2_solverTGS_Soft_XPBD:
+				s2Solve_TGS_Soft_XPBD(world, &context);
 				break;
 
 			case s2_solverTGS_NGS:

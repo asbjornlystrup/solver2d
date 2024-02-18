@@ -382,9 +382,9 @@ void s2PrepareJoint_Soft(s2Joint* joint, s2StepContext* context, float h, float 
 	}
 }
 
-extern void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float inv_h, bool useBias);
+extern void s2SolveRevolute_Soft(s2Joint* base, s2StepContext* context, float h, float inv_h, bool useBias, bool useXPBD);
 
-void s2SolveJoint_Soft(s2Joint* joint, s2StepContext* context, float h, float inv_h, bool useBias)
+void s2SolveJoint_Soft(s2Joint* joint, s2StepContext* context, float h, float inv_h, bool useBias, bool useXPBD)
 {
 	switch (joint->type)
 	{
@@ -396,7 +396,7 @@ void s2SolveJoint_Soft(s2Joint* joint, s2StepContext* context, float h, float in
 			break;
 
 		case s2_revoluteJoint:
-			s2SolveRevolute_Soft(joint, context, h, inv_h, useBias);
+			s2SolveRevolute_Soft(joint, context, h, inv_h, useBias, useXPBD);
 			break;
 
 		default:
